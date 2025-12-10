@@ -1,0 +1,38 @@
+{
+  "name": "irelate-voice-chat",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Browser-based voice chat with local STT, pluggable LLM, and TTS",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/irelate/irelate-voice-chat"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@mlc-ai/web-llm": "^0.2.78",
+    "@huggingface/transformers": "3.8.1",
+    "@radix-ui/react-avatar": "^1.1.11",
+    "@radix-ui/react-slot": "^1.2.4",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.556.0",
+    "next": "16.0.7",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "tailwind-merge": "^3.4.0",
+    "use-stick-to-bottom": "^1.1.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
