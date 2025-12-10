@@ -1,10 +1,17 @@
-import { pipeline, TextToAudioPipeline } from "@huggingface/transformers";
+import { pipeline, TextToAudioPipeline, env } from "@huggingface/transformers";
 import { split } from "./splitter";
 import type { RawAudio } from "@huggingface/transformers";
 
-// Model and voices from HuggingFace (CORS-friendly)
+// Suppress ONNX runtime warnings by setting log severity to error only
+// @ts-ignore - onnx backend env typing
+if (env.backends?.onnx) {
+  env.backends.onnx.logSeverityLevel = 3; // 0=verbose, 1=info, 2=warning, 3=error, 4=fatal
+  env.backends.onnx.logVerbosityLevel = 0;
+}
+
+// Model from HuggingFace, voices served locally (all 10 included)
 const MODEL_ID = "onnx-community/Supertonic-TTS-ONNX";
-const VOICES_URL = `https://huggingface.co/${MODEL_ID}/resolve/main/voices/`;
+const VOICES_URL = "/voices/";
 
 let pipelinePromise: Promise<TextToAudioPipeline> | null = null;
 let embeddingsPromise: Promise<Record<string, Float32Array>> | null = null;
@@ -30,8 +37,8 @@ export async function loadPipeline(progressCallback: (info: any) => void) {
 
 export async function loadEmbeddings() {
   return (embeddingsPromise ??= (async () => {
-    // Only F1 and M1 are available in the HuggingFace model
-    const voiceIds = ["F1", "M1"];
+    // All 10 voices included locally
+    const voiceIds = ["F1", "F2", "F3", "F4", "F5", "M1", "M2", "M3", "M4", "M5"];
     const buffers = await Promise.all(
       voiceIds.map(id => fetch(`${VOICES_URL}${id}.bin`).then(r => r.arrayBuffer()))
     );

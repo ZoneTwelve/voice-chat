@@ -39,7 +39,7 @@ export function useWebLLM(options: UseWebLLMOptions = {}) {
   const abortControllerRef = useRef<AbortController | null>(null)
 
   const updateStatus = useCallback((newStatus: WebLLMStatus) => {
-    console.log("[WebLLM] Status:", newStatus)
+    console.debug("[WebLLM] Status:", newStatus)
     setStatus(newStatus)
     onStatusChange?.(newStatus)
   }, [onStatusChange])
@@ -57,7 +57,10 @@ export function useWebLLM(options: UseWebLLMOptions = {}) {
           // progress.progress is 0-1
           const pct = Math.round((progress.progress || 0) * 100)
           setLoadProgress(pct)
-          console.log(`[WebLLM] Loading: ${progress.text} (${pct}%)`)
+          // Only log major milestones
+          if (pct === 100 || (progress.text && progress.text.includes("Finish"))) {
+            console.debug(`[WebLLM] ${progress.text}`)
+          }
         },
       })
 
@@ -101,7 +104,7 @@ export function useWebLLM(options: UseWebLLMOptions = {}) {
       return content
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
-        console.log("[WebLLM] Generation aborted")
+        console.debug("[WebLLM] Generation aborted")
         updateStatus("ready")
         return ""
       }

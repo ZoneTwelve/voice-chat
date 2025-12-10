@@ -15,18 +15,23 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        {/* Suppress ONNX runtime warnings before any modules load */}
+        {/* Suppress noisy library warnings before any modules load */}
         <Script id="suppress-onnx" strategy="beforeInteractive">{`
           (function() {
             const originalWarn = console.warn;
             const originalError = console.error;
-            const suppress = (msg) => typeof msg === 'string' && (
-              msg.includes('onnxruntime') || 
-              msg.includes('VerifyEachNodeIsAssignedToAnEp') ||
-              msg.includes('session_state.cc')
+            const suppress = (...args) => args.some(arg => 
+              typeof arg === 'string' && (
+                arg.includes('onnxruntime') || 
+                arg.includes('VerifyEachNodeIsAssignedToAnEp') ||
+                arg.includes('session_state.cc') ||
+                arg.includes('[W:onnxruntime') ||
+                arg.includes('content-length') ||
+                arg.includes('Unknown model class')
+              )
             );
-            console.warn = function(...args) { if (!suppress(args[0])) originalWarn.apply(console, args); };
-            console.error = function(...args) { if (!suppress(args[0])) originalError.apply(console, args); };
+            console.warn = function(...args) { if (!suppress(...args)) originalWarn.apply(console, args); };
+            console.error = function(...args) { if (!suppress(...args)) originalError.apply(console, args); };
           })();
         `}</Script>
       </head>

@@ -3,6 +3,22 @@
  * Handles VAD + Whisper transcription
  */
 
+// Suppress noisy ONNX/hub warnings in worker
+const originalWarn = console.warn
+const originalError = console.error
+const suppress = (...args) => args.some(arg => 
+  typeof arg === 'string' && (
+    arg.includes('onnxruntime') || 
+    arg.includes('VerifyEachNodeIsAssignedToAnEp') ||
+    arg.includes('session_state.cc') ||
+    arg.includes('[W:onnxruntime') ||
+    arg.includes('content-length') ||
+    arg.includes('Unknown model class')
+  )
+)
+console.warn = function(...args) { if (!suppress(...args)) originalWarn.apply(console, args) }
+console.error = function(...args) { if (!suppress(...args)) originalError.apply(console, args) }
+
 import { AutoModel, pipeline, Tensor, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.1/+esm"
 
 // ============ Constants ============
@@ -45,7 +61,7 @@ async function getDevice() {
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
   
   if (isIOS) {
-    console.log("[STT Worker] iOS detected, using WASM for stability")
+    console.debug("[STT Worker] iOS detected, using WASM for stability")
     return "wasm"
   }
   
@@ -53,33 +69,33 @@ async function getDevice() {
     try {
       const adapter = await navigator.gpu.requestAdapter()
       if (adapter) {
-        console.log("[STT Worker] WebGPU available")
+        console.debug("[STT Worker] WebGPU available")
         return "webgpu"
       }
     } catch (e) {
-      console.log("[STT Worker] WebGPU check failed:", e)
+      console.debug("[STT Worker] WebGPU check failed:", e)
     }
   }
-  console.log("[STT Worker] Falling back to WASM")
+  console.debug("[STT Worker] Falling back to WASM")
   return "wasm"
 }
 
 let selectedDevice = null
 
-console.log("[STT Worker ESM] Loaded, AutoModel:", !!AutoModel)
+console.debug("[STT Worker ESM] Loaded, AutoModel:", !!AutoModel)
 
 // ============ Model Loading ============
 async function loadModels() {
-  console.log("[STT Worker] Starting model load...")
+  console.debug("[STT Worker] Starting model load...")
   
   // Detect best available device
   selectedDevice = await getDevice()
-  console.log("[STT Worker] Using device:", selectedDevice)
+  console.debug("[STT Worker] Using device:", selectedDevice)
   
   self.postMessage({ type: "status", status: "loading", message: `Loading VAD model (${selectedDevice})...` })
 
   // Load Silero VAD from onnx-community (public, no auth required)
-  console.log("[STT Worker] Loading Silero VAD...")
+  console.debug("[STT Worker] Loading Silero VAD...")
   sileroVad = await AutoModel.from_pretrained("onnx-community/silero-vad", {
     config: { model_type: "custom" },
     dtype: "fp32",
@@ -90,7 +106,7 @@ async function loadModels() {
       }
     },
   })
-  console.log("[STT Worker] VAD loaded!")
+  console.debug("[STT Worker] VAD loaded!")
 
   // Init VAD tensors
   vadSr = new Tensor("int64", [INPUT_SAMPLE_RATE], [])
@@ -99,10 +115,10 @@ async function loadModels() {
   self.postMessage({ type: "status", status: "loading", message: "Loading Whisper model..." })
 
   // Load Whisper from onnx-community (public, no auth required)
-  console.log("[STT Worker] Loading Whisper base...")
+  console.debug("[STT Worker] Loading Whisper base...")
   // TODO: Add whisper-tiny-en to R2 for mobile
   const whisperModel = "onnx-community/whisper-base"
-  console.log("[STT Worker] Using Whisper model:", whisperModel)
+  console.debug("[STT Worker] Using Whisper model:", whisperModel)
   
   try {
     transcriber = await pipeline("automatic-speech-recognition", whisperModel, {
@@ -114,7 +130,7 @@ async function loadModels() {
         }
       },
     })
-    console.log("[STT Worker] Whisper loaded!")
+    console.debug("[STT Worker] Whisper loaded!")
   } catch (e) {
     console.error("[STT Worker] Whisper load failed:", e)
     self.postMessage({ type: "error", message: `Whisper failed: ${e.message}` })
@@ -123,9 +139,9 @@ async function loadModels() {
 
   // Warm up
   try {
-    console.log("[STT Worker] Warming up Whisper...")
+    console.debug("[STT Worker] Warming up Whisper...")
     await transcriber(new Float32Array(INPUT_SAMPLE_RATE))
-    console.log("[STT Worker] Warmup complete!")
+    console.debug("[STT Worker] Warmup complete!")
   } catch (e) {
     console.error("[STT Worker] Warmup failed:", e)
     self.postMessage({ type: "error", message: `Warmup failed: ${e.message}` })

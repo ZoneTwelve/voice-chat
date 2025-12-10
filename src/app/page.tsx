@@ -5,13 +5,32 @@ import { Button } from "@/components/ui/button"
 import { LiveWaveform } from "@/components/ui/live-waveform"
 import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ui/conversation"
 import { Message, MessageContent } from "@/components/ui/message"
-import { Mic, MicOff, Volume2, VolumeX, X, ChevronDown, Cpu, Cloud } from "lucide-react"
+import { Mic, MicOff, Volume2, VolumeX, Phone, PhoneOff, ChevronDown } from "lucide-react"
 import { useTTS, type TTSVoice } from "@/hooks/use-tts"
-import { useWebLLM, WEBLLM_MODELS, type WebLLMModel } from "@/hooks/use-webllm"
+import { useWebLLM } from "@/hooks/use-webllm"
 
 type Status = "idle" | "loading" | "ready" | "listening" | "recording" | "transcribing" | "thinking" | "speaking" | "error"
 
-type LLMMode = "browser" | "api"
+/*
+ * ADDING YOUR OWN LLM:
+ * 
+ * This demo uses an in-browser LLM (Qwen 1.5B via WebLLM) for fully local operation.
+ * To connect an external LLM instead:
+ * 
+ * 1. Create an API route at /api/chat that accepts:
+ *    { messages: [{role, content}], systemPrompt: string }
+ *    
+ * 2. In handleLLMResponse(), replace the WebLLM call with:
+ *    const response = await fetch("/api/chat", {
+ *      method: "POST",
+ *      headers: { "Content-Type": "application/json" },
+ *      body: JSON.stringify({ messages: conversationHistory, systemPrompt: SYSTEM_PROMPT })
+ *    });
+ *    const data = await response.json();
+ *    assistantMessage = data.response;
+ *    
+ * 3. See /api/chat/route.ts for an example connecting to LM Studio or other providers.
+ */
 
 interface ChatMessage {
   role: "user" | "assistant"
@@ -25,9 +44,7 @@ export default function VoiceChat() {
   const [isCallActive, setIsCallActive] = useState(false)
   const [isMicMuted, setIsMicMuted] = useState(false)
   const [showVoiceMenu, setShowVoiceMenu] = useState(false)
-  const [showLLMMenu, setShowLLMMenu] = useState(false)
   const [textInput, setTextInput] = useState("")
-  const [llmMode, setLLMMode] = useState<LLMMode>("browser") // Default to in-browser
   
   const workerRef = useRef<Worker | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -38,7 +55,6 @@ export default function VoiceChat() {
   const isProcessingRef = useRef(false)  // Lock to prevent parallel LLM/TTS calls
   const abortControllerRef = useRef<AbortController | null>(null)  // For cancelling LLM requests
   const pendingUserInputRef = useRef<string | null>(null)  // Queue user input during processing
-  const webllmReadyRef = useRef(false)  // Track WebLLM ready state for callbacks
 
   // WebGPU TTS
   const tts = useTTS({
@@ -74,10 +90,7 @@ export default function VoiceChat() {
     webllmRef.current = webllm
   }, [webllm])
 
-  const llmModeRef = useRef(llmMode)
-  useEffect(() => {
-    llmModeRef.current = llmMode
-  }, [llmMode])
+
 
   useEffect(() => {
     isCallActiveRef.current = isCallActive
@@ -103,14 +116,13 @@ export default function VoiceChat() {
             setStatusMessage("Loading TTS model...")
             await tts.loadModels()
             
-            // If browser mode, also load WebLLM
-            if (llmMode === "browser") {
-              setStatusMessage("Loading LLM model (this may take a minute)...")
-              await webllm.loadModel()
-            }
+            // Load the in-browser LLM
+            setStatusMessage("Loading LLM model (this may take a minute)...")
+            await webllm.loadModel()
             
             setStatus("ready")
             setStatusMessage("Ready! Click 'Start Call' to begin.")
+            console.log("[Voice] Ready - STT, TTS, LLM loaded")
           } else if (msgStatus === "loading") {
             setStatus("loading")
             setStatusMessage(message)
@@ -130,11 +142,11 @@ export default function VoiceChat() {
 
         case "transcript":
           if (isFinal && text && text.trim()) {
-            console.log("Transcript:", text)
+            console.log("[STT]", text)
             
             // If we're currently processing, interrupt and queue the new input
             if (isProcessingRef.current) {
-              console.log("[Voice] Interrupting - new user input")
+              console.debug("[Voice] Interrupting - new user input")
               // Cancel ongoing LLM request
               abortControllerRef.current?.abort()
               // Stop TTS playback
@@ -174,21 +186,13 @@ export default function VoiceChat() {
     workerRef.current?.postMessage({ type: "init" })
   }, [initWorker])
 
-  // Load WebLLM after TTS is ready (called from worker message handler)
-  const loadWebLLM = useCallback(async () => {
-    if (llmMode === "browser" && !webllm.isReady && !webllm.isLoading) {
-      setStatusMessage("Loading LLM model (this may take a minute)...")
-      await webllm.loadModel()
-    }
-  }, [llmMode, webllm])
-
   const SYSTEM_PROMPT = "You are a helpful voice assistant. Keep responses concise and conversational - typically 1-3 sentences. Be warm and friendly. Use plain ASCII characters only - no emojis, no smart quotes, no fancy punctuation."
 
   // Handle LLM response with interruption support
   const handleLLMResponse = async (conversationHistory: ChatMessage[]) => {
     // Prevent parallel LLM/TTS calls
     if (isProcessingRef.current) {
-      console.log("[Voice] Ignoring request - already processing")
+      console.debug("[Voice] Ignoring request - already processing")
       return
     }
     isProcessingRef.current = true
@@ -201,45 +205,21 @@ export default function VoiceChat() {
     setStatusMessage("Thinking...")
 
     try {
-      let assistantMessage: string
-
       const currentWebllm = webllmRef.current
-      const currentLLMMode = llmModeRef.current
-      console.log("[Voice] LLM decision:", { llmMode: currentLLMMode, webllmReady: currentWebllm.isReady, webllmStatus: currentWebllm.status })
       
-      if (currentLLMMode === "browser" && currentWebllm.isReady) {
-        // Use in-browser WebLLM
-        console.log("[Voice] Using WebLLM (in-browser)")
-        assistantMessage = await currentWebllm.chat(
-          conversationHistory.map(m => ({ role: m.role, content: m.content })),
-          SYSTEM_PROMPT
-        )
-      } else {
-        // Use API
-        console.log("[Voice] Using API (lmstudio)")
-        const response = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            messages: conversationHistory.map(m => ({
-              role: m.role,
-              content: m.content
-            })),
-            provider: "lmstudio",
-            systemPrompt: SYSTEM_PROMPT
-          }),
-          signal: abortControllerRef.current.signal
-        })
-
-        if (!response.ok) {
-          throw new Error(`API error: ${response.status}`)
-        }
-
-        const data = await response.json()
-        assistantMessage = data.response || "I'm sorry, I didn't understand that."
+      if (!currentWebllm.isReady) {
+        throw new Error("LLM not ready")
       }
+      
+      // Use in-browser WebLLM
+      console.debug("[Voice] Using WebLLM (in-browser)")
+      const assistantMessage = await currentWebllm.chat(
+        conversationHistory.map(m => ({ role: m.role, content: m.content })),
+        SYSTEM_PROMPT
+      )
 
       setMessages(prev => [...prev, { role: "assistant", content: assistantMessage }])
+      console.log("[LLM]", assistantMessage)
 
       // Speak the response (can be interrupted)
       setStatus("speaking")
@@ -254,7 +234,7 @@ export default function VoiceChat() {
     } catch (error) {
       // Check if this was an intentional abort (user interrupted)
       if (error instanceof Error && error.name === "AbortError") {
-        console.log("[Voice] Request aborted by user interruption")
+        console.debug("[Voice] Request aborted by user interruption")
       } else {
         console.error("LLM error:", error)
         setStatusMessage(`LLM error: ${error}`)
@@ -271,7 +251,7 @@ export default function VoiceChat() {
       if (pendingUserInputRef.current) {
         const pendingText = pendingUserInputRef.current
         pendingUserInputRef.current = null
-        console.log("[Voice] Processing pending input:", pendingText)
+        console.debug("[Voice] Processing pending input:", pendingText)
         const userMessage: ChatMessage = { role: "user", content: pendingText }
         setMessages(prev => [...prev, userMessage])
         // Use setTimeout to avoid call stack issues
@@ -360,16 +340,21 @@ export default function VoiceChat() {
 
   // End call
   const endCall = () => {
+    // Abort any pending LLM request
+    abortControllerRef.current?.abort()
+    abortControllerRef.current = null
+    isProcessingRef.current = false
+    
     setIsCallActive(false)
     stopListening()
     tts.stop()
     setStatus("ready")
-    setStatusMessage("Call ended. Click 'Start Call' to begin again.")
+    setStatusMessage("Ready! Click mic to start a new call.")
   }
 
   // Auto-initialize on mount (empty deps - run once)
   useEffect(() => {
-    console.log("[Voice] Auto-initializing...")
+    console.debug("[Voice] Auto-initializing...")
     loadModels()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -387,8 +372,16 @@ export default function VoiceChat() {
   const waveformProcessing = status === "speaking" || status === "thinking" || status === "transcribing"
 
   const voices: { id: TTSVoice; name: string; desc: string }[] = [
-    { id: "F1", name: "Female", desc: "Natural female voice" },
-    { id: "M1", name: "Male", desc: "Natural male voice" },
+    { id: "F1", name: "Female 1", desc: "Calm, steady" },
+    { id: "F2", name: "Female 2", desc: "Bright, cheerful" },
+    { id: "F3", name: "Female 3", desc: "Professional" },
+    { id: "F4", name: "Female 4", desc: "Confident" },
+    { id: "F5", name: "Female 5", desc: "Gentle" },
+    { id: "M1", name: "Male 1", desc: "Lively, upbeat" },
+    { id: "M2", name: "Male 2", desc: "Deep, calm" },
+    { id: "M3", name: "Male 3", desc: "Authoritative" },
+    { id: "M4", name: "Male 4", desc: "Soft, friendly" },
+    { id: "M5", name: "Male 5", desc: "Warm" },
   ]
 
   return (
@@ -501,111 +494,35 @@ export default function VoiceChat() {
               </div>
 
               {/* Buttons - flex-shrink-0 to prevent shrinking */}
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {/* Mic mute button (when in call) */}
-                {isCallActive && (
+              <div className="flex items-center gap-1 flex-shrink-0">
+                {/* Mic mute - black/white icon */}
+                {status !== "loading" && status !== "idle" && (
                   <Button
                     onClick={toggleMicMute}
                     size="icon"
                     variant="ghost"
+                    disabled={!isCallActive}
                     className={`h-10 w-10 rounded-full ${
-                      isMicMuted 
-                        ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" 
-                        : "bg-green-500/20 text-green-400 hover:bg-green-500/30"
+                      !isCallActive
+                        ? "text-zinc-600 cursor-not-allowed"
+                        : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700"
                     }`}
+                    title={isMicMuted ? "Unmute mic" : "Mute mic"}
                   >
                     {isMicMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
                   </Button>
                 )}
 
-                {/* End call button (when in call) */}
-                {isCallActive && (
-                  <Button
-                    onClick={endCall}
-                    size="icon"
-                    variant="ghost"
-                    className="h-10 w-10 rounded-full bg-red-600 text-white hover:bg-red-700"
-                    title="End call"
-                  >
-                    <X className="h-5 w-5" />
-                  </Button>
-                )}
-
-                {/* Start call button (when not in call and ready) */}
-                {!isCallActive && status === "ready" && (
-                  <Button
-                    onClick={startCall}
-                    size="icon"
-                    variant="ghost"
-                    className="h-10 w-10 rounded-full bg-green-600 text-white hover:bg-green-700"
-                  >
-                    <Mic className="h-5 w-5" />
-                  </Button>
-                )}
-
-                {/* Speaker mute */}
+                {/* Speaker mute - black/white icon */}
                 <Button
                   onClick={() => tts.setMuted(!tts.muted)}
                   size="icon"
                   variant="ghost"
                   className="h-10 w-10 rounded-full text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700"
+                  title={tts.muted ? "Unmute speaker" : "Mute speaker"}
                 >
                   {tts.muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
                 </Button>
-
-                {/* LLM mode toggle */}
-                <div className="relative">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowLLMMenu(!showLLMMenu)}
-                    className="text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 gap-1"
-                    title={llmMode === "browser" ? "In-Browser LLM" : "API LLM"}
-                  >
-                    {llmMode === "browser" ? <Cpu className="h-4 w-4" /> : <Cloud className="h-4 w-4" />}
-                    <ChevronDown className="h-3 w-3" />
-                  </Button>
-                  {showLLMMenu && (
-                    <div className="absolute bottom-full mb-2 right-0 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl p-2 min-w-[180px]">
-                      <button
-                        onClick={() => {
-                          setLLMMode("browser")
-                          setShowLLMMenu(false)
-                        }}
-                        className={`w-full text-left px-3 py-2 rounded text-sm hover:bg-zinc-700 ${
-                          llmMode === "browser" ? "bg-zinc-700 text-white" : "text-zinc-300"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <Cpu className="h-4 w-4" />
-                          <div>
-                            <div className="font-medium">In-Browser</div>
-                            <div className="text-xs text-zinc-500">
-                              {webllm.currentModel ? WEBLLM_MODELS.find(m => m.id === webllm.currentModel)?.name : "Qwen 1.5B"}
-                            </div>
-                          </div>
-                        </div>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setLLMMode("api")
-                          setShowLLMMenu(false)
-                        }}
-                        className={`w-full text-left px-3 py-2 rounded text-sm hover:bg-zinc-700 ${
-                          llmMode === "api" ? "bg-zinc-700 text-white" : "text-zinc-300"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <Cloud className="h-4 w-4" />
-                          <div>
-                            <div className="font-medium">API</div>
-                            <div className="text-xs text-zinc-500">LM Studio / External</div>
-                          </div>
-                        </div>
-                      </button>
-                    </div>
-                  )}
-                </div>
 
                 {/* Voice selector */}
                 <div className="relative">
@@ -619,37 +536,49 @@ export default function VoiceChat() {
                     <ChevronDown className="h-3 w-3" />
                   </Button>
                   {showVoiceMenu && (
-                    <div className="absolute bottom-full mb-2 right-0 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl p-2 min-w-[140px]">
-                      {voices.map((voice) => (
-                        <button
-                          key={voice.id}
-                          onClick={() => {
-                            tts.setVoice(voice.id)
-                            setShowVoiceMenu(false)
-                          }}
-                          className={`w-full text-left px-3 py-2 rounded text-sm hover:bg-zinc-700 ${
-                            tts.voice === voice.id ? "bg-zinc-700 text-white" : "text-zinc-300"
-                          }`}
-                        >
-                          <div className="font-medium">{voice.name}</div>
-                          <div className="text-xs text-zinc-500">{voice.desc}</div>
-                        </button>
-                      ))}
-                    </div>
+                    <>
+                      {/* Click outside to close */}
+                      <div className="fixed inset-0 z-10" onClick={() => setShowVoiceMenu(false)} />
+                      <div className="absolute bottom-full mb-2 right-0 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl p-2 min-w-[140px] z-20">
+                        {voices.map((voice) => (
+                          <button
+                            key={voice.id}
+                            onClick={() => {
+                              tts.setVoice(voice.id)
+                              setShowVoiceMenu(false)
+                            }}
+                            className={`w-full text-left px-3 py-2 rounded text-sm hover:bg-zinc-700 ${
+                              tts.voice === voice.id ? "bg-zinc-700 text-white" : "text-zinc-300"
+                            }`}
+                          >
+                            <div className="font-medium">{voice.name}</div>
+                            <div className="text-xs text-zinc-500">{voice.desc}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </>
                   )}
                 </div>
 
-                {/* Close button when active */}
-                {isCallActive && (
+
+
+                {/* Call toggle - colored (green start / red end) - far right */}
+                {status !== "loading" && status !== "idle" && (
                   <Button
-                    onClick={endCall}
+                    onClick={isCallActive ? endCall : startCall}
                     size="icon"
                     variant="ghost"
-                    className="h-10 w-10 rounded-full text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700"
+                    className={`h-10 w-10 rounded-full ${
+                      isCallActive
+                        ? "bg-red-600 text-white hover:bg-red-700"
+                        : "bg-green-600 text-white hover:bg-green-700"
+                    }`}
+                    title={isCallActive ? "End call" : "Start call"}
                   >
-                    <X className="h-5 w-5" />
+                    {isCallActive ? <PhoneOff className="h-5 w-5" /> : <Phone className="h-5 w-5" />}
                   </Button>
                 )}
+
               </div>
             </div>
           </div>

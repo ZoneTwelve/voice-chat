@@ -7,7 +7,7 @@ import { loadPipeline, loadEmbeddings, streamTTS } from "@/lib/tts"
 import type { TextToAudioPipeline } from "@huggingface/transformers"
 
 export type TTSStatus = "idle" | "loading" | "ready" | "speaking" | "error"
-export type TTSVoice = "F1" | "M1"
+export type TTSVoice = "F1" | "F2" | "F3" | "F4" | "F5" | "M1" | "M2" | "M3" | "M4" | "M5"
 
 interface UseTTSOptions {
   onStatusChange?: (status: TTSStatus) => void
@@ -92,7 +92,7 @@ export function useTTS(options: UseTTSOptions = {}) {
 
     const normalizedText = normalizeText(text)
     if (normalizedText !== text) {
-      console.log("[TTS] Text normalized:", { original: text, normalized: normalizedText })
+      console.debug("[TTS] Text normalized:", { original: text, normalized: normalizedText })
     }
     updateStatus("speaking")
 
@@ -108,21 +108,21 @@ export function useTTS(options: UseTTSOptions = {}) {
 
       const currentVoice = voiceRef.current
       const speakerEmbedding = embeddingsRef.current[currentVoice]
-      console.log("[TTS] Using voice:", currentVoice, "embedding length:", speakerEmbedding?.length)
-      const quality = 15 // Number of inference steps
-      const speed = 1.0
+      console.debug("[TTS] Using voice:", currentVoice, "embedding length:", speakerEmbedding?.length)
+      const quality = 20 // Number of inference steps (higher = better quality, slower)
+      const speed = 1.1 // Slightly faster speech
 
       // Collect all audio chunks
       const audioChunks: Float32Array[] = []
       let sampleRate = 44100
 
-      console.log("[TTS] Starting streamTTS...")
+      console.debug("[TTS] Starting streamTTS...")
       for await (const result of streamTTS(normalizedText, ttsRef.current, speakerEmbedding, quality, speed)) {
-        console.log("[TTS] Got chunk", result.index, "/", result.total)
+        console.debug("[TTS] Got chunk", result.index, "/", result.total)
         audioChunks.push(result.audio.audio)
         sampleRate = result.audio.sampling_rate
       }
-      console.log("[TTS] streamTTS complete, chunks:", audioChunks.length)
+      console.debug("[TTS] streamTTS complete, chunks:", audioChunks.length)
 
       // Merge chunks
       const totalLength = audioChunks.reduce((acc, chunk) => acc + chunk.length, 0)

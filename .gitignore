@@ -36,8 +36,8 @@ Thumbs.db
 # Misc
 *.log
 
-# Large model files - download separately or use CDN
-models/
+# Large model files - download from HuggingFace CDN at runtime
 *.onnx
 *.onnx_data
-*.bin
+
+# Voice embeddings are small (~50KB each) and included in public/voices/
