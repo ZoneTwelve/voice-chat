@@ -74,6 +74,11 @@ export default function VoiceChat() {
     webllmRef.current = webllm
   }, [webllm])
 
+  const llmModeRef = useRef(llmMode)
+  useEffect(() => {
+    llmModeRef.current = llmMode
+  }, [llmMode])
+
   useEffect(() => {
     isCallActiveRef.current = isCallActive
   }, [isCallActive])
@@ -199,9 +204,10 @@ export default function VoiceChat() {
       let assistantMessage: string
 
       const currentWebllm = webllmRef.current
-      console.log("[Voice] LLM decision:", { llmMode, webllmReady: currentWebllm.isReady, webllmStatus: currentWebllm.status })
+      const currentLLMMode = llmModeRef.current
+      console.log("[Voice] LLM decision:", { llmMode: currentLLMMode, webllmReady: currentWebllm.isReady, webllmStatus: currentWebllm.status })
       
-      if (llmMode === "browser" && currentWebllm.isReady) {
+      if (currentLLMMode === "browser" && currentWebllm.isReady) {
         // Use in-browser WebLLM
         console.log("[Voice] Using WebLLM (in-browser)")
         assistantMessage = await currentWebllm.chat(
@@ -381,16 +387,8 @@ export default function VoiceChat() {
   const waveformProcessing = status === "speaking" || status === "thinking" || status === "transcribing"
 
   const voices: { id: TTSVoice; name: string; desc: string }[] = [
-    { id: "F1", name: "Female 1", desc: "Calm, steady" },
-    { id: "F2", name: "Female 2", desc: "Bright, cheerful" },
-    { id: "F3", name: "Female 3", desc: "Announcer" },
-    { id: "F4", name: "Female 4", desc: "Confident" },
-    { id: "F5", name: "Female 5", desc: "Gentle, soothing" },
-    { id: "M1", name: "Male 1", desc: "Lively, upbeat" },
-    { id: "M2", name: "Male 2", desc: "Deep, calm" },
-    { id: "M3", name: "Male 3", desc: "Authoritative" },
-    { id: "M4", name: "Male 4", desc: "Soft, friendly" },
-    { id: "M5", name: "Male 5", desc: "Warm, storyteller" },
+    { id: "F1", name: "Female", desc: "Natural female voice" },
+    { id: "M1", name: "Male", desc: "Natural male voice" },
   ]
 
   return (

@@ -1,14 +1,10 @@
-import { pipeline, TextToAudioPipeline, env } from "@huggingface/transformers";
+import { pipeline, TextToAudioPipeline } from "@huggingface/transformers";
 import { split } from "./splitter";
 import type { RawAudio } from "@huggingface/transformers";
 
-// Configure transformers.js to use our R2 storage
-env.remoteHost = "https://media.irelate.ai/models";
-env.remotePathTemplate = "{model}/";
-
-// Model and voices from our R2 storage
-const MODEL_ID = "supertonic-tts";
-const VOICES_URL = "https://media.irelate.ai/models/supertonic-tts/voices/";
+// Model and voices from HuggingFace (CORS-friendly)
+const MODEL_ID = "onnx-community/Supertonic-TTS-ONNX";
+const VOICES_URL = `https://huggingface.co/${MODEL_ID}/resolve/main/voices/`;
 
 let pipelinePromise: Promise<TextToAudioPipeline> | null = null;
 let embeddingsPromise: Promise<Record<string, Float32Array>> | null = null;
@@ -34,7 +30,8 @@ export async function loadPipeline(progressCallback: (info: any) => void) {
 
 export async function loadEmbeddings() {
   return (embeddingsPromise ??= (async () => {
-    const voiceIds = ["F1", "F2", "F3", "F4", "F5", "M1", "M2", "M3", "M4", "M5"];
+    // Only F1 and M1 are available in the HuggingFace model
+    const voiceIds = ["F1", "M1"];
     const buffers = await Promise.all(
       voiceIds.map(id => fetch(`${VOICES_URL}${id}.bin`).then(r => r.arrayBuffer()))
     );

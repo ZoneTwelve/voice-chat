@@ -7,7 +7,7 @@ import { loadPipeline, loadEmbeddings, streamTTS } from "@/lib/tts"
 import type { TextToAudioPipeline } from "@huggingface/transformers"
 
 export type TTSStatus = "idle" | "loading" | "ready" | "speaking" | "error"
-export type TTSVoice = "F1" | "F2" | "F3" | "F4" | "F5" | "M1" | "M2" | "M3" | "M4" | "M5"
+export type TTSVoice = "F1" | "M1"
 
 interface UseTTSOptions {
   onStatusChange?: (status: TTSStatus) => void
