@@ -1,6 +1,6 @@
-# Voice Chat - 100% In-Browser
+# AI Voice Chat - 100% In-Browser
 
-A fully browser-based voice assistant. Speech recognition, LLM, and text-to-speech all run locally in your browser using WebGPU - no API keys, no server, no data leaves your device.
+A hands-free AI voice assistant that runs entirely in your browser. Speech recognition, LLM, and text-to-speech all run locally using WebGPU - no API keys, no server, no data leaves your device. Just talk naturally and the AI responds.
 
 ## Live Demo
 
@@ -28,7 +28,17 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000) in Chrome or Edge.
 
-First load downloads ~1GB of models (cached in browser for future visits).
+## What Downloads When
+
+| Asset | Size | When | Cached |
+|-------|------|------|--------|
+| Voice embeddings | ~500KB | Included in repo | ✓ Already local |
+| Whisper STT model | ~150MB | First use | ✓ IndexedDB |
+| Silero VAD model | ~2MB | First use | ✓ IndexedDB |
+| Qwen 1.5B LLM | ~900MB | First use | ✓ IndexedDB |
+| Supertonic TTS | ~50MB | First use | ✓ IndexedDB |
+
+First load downloads ~1GB of models from HuggingFace CDN. After that, everything runs offline.
 
 ## Requirements
 
@@ -67,10 +77,6 @@ src/
 │   ├── layout.tsx            # App layout
 │   └── globals.css           # Styles
 ├── components/ui/            # UI components
-│   ├── conversation.tsx      # Chat display
-│   ├── message.tsx           # Message bubbles
-│   ├── live-waveform.tsx     # Audio visualizer
-│   └── button.tsx            # UI primitives
 ├── hooks/
 │   ├── use-webllm.ts         # WebLLM integration
 │   └── use-tts.ts            # TTS integration
@@ -81,39 +87,49 @@ src/
 public/
 ├── stt-worker-esm.js         # Whisper + VAD worker
 ├── vad-processor.js          # Audio worklet
-└── voices/                   # TTS voice embeddings (F1-F5, M1-M5)
+└── voices/                   # TTS voice embeddings (bundled)
 ```
 
-## Adding Your Own LLM
+## Using a Different LLM
 
-This demo uses an in-browser LLM for fully local operation. To connect an external LLM:
+This demo uses WebLLM for fully local operation. To use an external LLM instead:
 
-1. Create an API route at `/api/chat`
-2. Modify `handleLLMResponse()` in `page.tsx` to call your API
-3. See comments in `page.tsx` for example code
+1. Create an API route (e.g., `src/app/api/chat/route.ts`)
+2. In `page.tsx`, find `handleLLMResponse()` and replace the WebLLM call:
+
+```typescript
+// Instead of webllm.chat(), call your API:
+const response = await fetch("/api/chat", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ messages: conversationHistory })
+});
+const data = await response.json();
+return data.response;
+```
 
 ## Tech Stack
 
 - **Framework**: Next.js 16, React 19
-- **STT**: @huggingface/transformers (Whisper)
+- **STT**: Whisper via @huggingface/transformers
 - **VAD**: Silero VAD via ONNX Runtime
-- **LLM**: @mlc-ai/web-llm (Qwen 1.5B)
+- **LLM**: Qwen 1.5B via @mlc-ai/web-llm
 - **TTS**: Supertonic via @huggingface/transformers
 - **Styling**: Tailwind CSS v4
 
 ## Voice Options
 
-10 voices included (5 female, 5 male):
+10 voices bundled (5 female, 5 male):
 - F1: Calm, steady
 - F2: Bright, cheerful
-- F3: Professional announcer
-- F4: Confident, expressive
-- F5: Gentle, soothing
+- F3: Professional
+- F4: Confident
+- F5: Gentle
 - M1: Lively, upbeat
 - M2: Deep, calm
 - M3: Authoritative
 - M4: Soft, friendly
-- M5: Warm, storyteller
+- M5: Warm
 
 ## License
 
@@ -125,4 +141,4 @@ MIT License - see [LICENSE](LICENSE)
 - [Silero VAD](https://github.com/snakers4/silero-vad) - Silero Team
 - [WebLLM](https://github.com/mlc-ai/web-llm) - MLC AI
 - [Transformers.js](https://github.com/huggingface/transformers.js) - Hugging Face
-- [Supertonic TTS](https://github.com/supertone-inc/supertonic-py) - Supertone
+- [Supertonic TTS](https://huggingface.co/onnx-community/Supertonic-TTS-ONNX) - Supertone

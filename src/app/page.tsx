@@ -12,24 +12,12 @@ import { useWebLLM } from "@/hooks/use-webllm"
 type Status = "idle" | "loading" | "ready" | "listening" | "recording" | "transcribing" | "thinking" | "speaking" | "error"
 
 /*
- * ADDING YOUR OWN LLM:
+ * USING A DIFFERENT LLM:
  * 
- * This demo uses an in-browser LLM (Qwen 1.5B via WebLLM) for fully local operation.
- * To connect an external LLM instead:
- * 
- * 1. Create an API route at /api/chat that accepts:
- *    { messages: [{role, content}], systemPrompt: string }
- *    
- * 2. In handleLLMResponse(), replace the WebLLM call with:
- *    const response = await fetch("/api/chat", {
- *      method: "POST",
- *      headers: { "Content-Type": "application/json" },
- *      body: JSON.stringify({ messages: conversationHistory, systemPrompt: SYSTEM_PROMPT })
- *    });
- *    const data = await response.json();
- *    assistantMessage = data.response;
- *    
- * 3. See /api/chat/route.ts for an example connecting to LM Studio or other providers.
+ * This demo uses WebLLM (Qwen 1.5B) for fully local operation.
+ * To use an external LLM instead, replace the webllm.chat() call
+ * in handleLLMResponse() with a fetch to your API endpoint.
+ * See README.md for example code.
  */
 
 interface ChatMessage {
