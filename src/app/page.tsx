@@ -8,6 +8,7 @@ import { Message, MessageContent } from "@/components/ui/message"
 import { Mic, MicOff, Volume2, VolumeX, Phone, PhoneOff, ChevronDown, Settings, X } from "lucide-react"
 import { useTTS, type TTSVoice } from "@/hooks/use-tts"
 import { useWebLLM } from "@/hooks/use-webllm"
+import { HfInference } from "@huggingface/inference"
 
 type Status = "idle" | "loading" | "ready" | "listening" | "recording" | "transcribing" | "thinking" | "speaking" | "error"
 type LLMMode = "webllm" | "huggingface"
@@ -15,58 +16,26 @@ type LLMMode = "webllm" | "huggingface"
 // Detect iOS/iPadOS
 const isIOS = typeof navigator !== "undefined" && /iPad|iPhone|iPod/.test(navigator.userAgent)
 
-// HuggingFace Inference API
-const HF_MODEL = "Qwen/Qwen2.5-3B-Instruct"
-const HF_API_URL = `https://api-inference.huggingface.co/models/${HF_MODEL}`
+// HuggingFace Inference client (handles CORS properly)
+const hf = new HfInference() // No token = uses free public inference
 
 async function callHuggingFaceAPI(
   messages: { role: string; content: string }[],
   systemPrompt: string,
   signal?: AbortSignal
 ): Promise<string> {
-  // Format as chat
-  const formattedMessages = [
-    { role: "system", content: systemPrompt },
-    ...messages
+  const chatMessages = [
+    { role: "system" as const, content: systemPrompt },
+    ...messages.map(m => ({ role: m.role as "user" | "assistant", content: m.content }))
   ]
   
-  const response = await fetch(HF_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      // Public inference - no auth needed for many models, rate limited
-    },
-    body: JSON.stringify({
-      inputs: formatChatPrompt(formattedMessages),
-      parameters: {
-        max_new_tokens: 256,
-        temperature: 0.7,
-        return_full_text: false,
-      }
-    }),
-    signal,
+  const response = await hf.chatCompletion({
+    model: "Qwen/Qwen2.5-1.5B-Instruct", // Smaller model, more likely to be available
+    messages: chatMessages,
+    max_tokens: 256,
   })
   
-  if (!response.ok) {
-    const error = await response.text()
-    throw new Error(`HF API error: ${response.status} - ${error}`)
-  }
-  
-  const data = await response.json()
-  // HF returns array with generated_text
-  if (Array.isArray(data) && data[0]?.generated_text) {
-    return data[0].generated_text.trim()
-  }
-  throw new Error("Unexpected HF API response format")
-}
-
-// Format messages into a prompt string for HF
-function formatChatPrompt(messages: { role: string; content: string }[]): string {
-  return messages.map(m => {
-    if (m.role === "system") return `System: ${m.content}`
-    if (m.role === "user") return `User: ${m.content}`
-    return `Assistant: ${m.content}`
-  }).join("\n") + "\nAssistant:"
+  return response.choices[0]?.message?.content || "I couldn't generate a response."
 }
 
 /*
