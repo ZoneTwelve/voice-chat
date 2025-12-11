@@ -5,11 +5,69 @@ import { Button } from "@/components/ui/button"
 import { LiveWaveform } from "@/components/ui/live-waveform"
 import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ui/conversation"
 import { Message, MessageContent } from "@/components/ui/message"
-import { Mic, MicOff, Volume2, VolumeX, Phone, PhoneOff, ChevronDown } from "lucide-react"
+import { Mic, MicOff, Volume2, VolumeX, Phone, PhoneOff, ChevronDown, Settings, X } from "lucide-react"
 import { useTTS, type TTSVoice } from "@/hooks/use-tts"
 import { useWebLLM } from "@/hooks/use-webllm"
 
 type Status = "idle" | "loading" | "ready" | "listening" | "recording" | "transcribing" | "thinking" | "speaking" | "error"
+type LLMMode = "webllm" | "huggingface"
+
+// Detect iOS/iPadOS
+const isIOS = typeof navigator !== "undefined" && /iPad|iPhone|iPod/.test(navigator.userAgent)
+
+// HuggingFace Inference API
+const HF_MODEL = "Qwen/Qwen2.5-3B-Instruct"
+const HF_API_URL = `https://api-inference.huggingface.co/models/${HF_MODEL}`
+
+async function callHuggingFaceAPI(
+  messages: { role: string; content: string }[],
+  systemPrompt: string,
+  signal?: AbortSignal
+): Promise<string> {
+  // Format as chat
+  const formattedMessages = [
+    { role: "system", content: systemPrompt },
+    ...messages
+  ]
+  
+  const response = await fetch(HF_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      // Public inference - no auth needed for many models, rate limited
+    },
+    body: JSON.stringify({
+      inputs: formatChatPrompt(formattedMessages),
+      parameters: {
+        max_new_tokens: 256,
+        temperature: 0.7,
+        return_full_text: false,
+      }
+    }),
+    signal,
+  })
+  
+  if (!response.ok) {
+    const error = await response.text()
+    throw new Error(`HF API error: ${response.status} - ${error}`)
+  }
+  
+  const data = await response.json()
+  // HF returns array with generated_text
+  if (Array.isArray(data) && data[0]?.generated_text) {
+    return data[0].generated_text.trim()
+  }
+  throw new Error("Unexpected HF API response format")
+}
+
+// Format messages into a prompt string for HF
+function formatChatPrompt(messages: { role: string; content: string }[]): string {
+  return messages.map(m => {
+    if (m.role === "system") return `System: ${m.content}`
+    if (m.role === "user") return `User: ${m.content}`
+    return `Assistant: ${m.content}`
+  }).join("\n") + "\nAssistant:"
+}
 
 /*
  * USING A DIFFERENT LLM:
@@ -33,6 +91,17 @@ export default function VoiceChat() {
   const [isMicMuted, setIsMicMuted] = useState(false)
   const [showVoiceMenu, setShowVoiceMenu] = useState(false)
   const [textInput, setTextInput] = useState("")
+  const [llmMode, setLLMMode] = useState<LLMMode>(isIOS ? "huggingface" : "webllm")
+  const [showDebugPanel, setShowDebugPanel] = useState(false)
+  const [debugInfo, setDebugInfo] = useState({
+    webgpu: "checking...",
+    sttBackend: "unknown",
+    llmMode: isIOS ? "huggingface" : "webllm",
+    vadLoaded: false,
+    sttLoaded: false,
+    ttsLoaded: false,
+    llmLoaded: false,
+  })
   
   const workerRef = useRef<Worker | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -100,13 +169,22 @@ export default function VoiceChat() {
       switch (type) {
         case "status":
           if (msgStatus === "ready") {
+            setDebugInfo(prev => ({ ...prev, vadLoaded: true, sttLoaded: true }))
+            
             // STT ready, now load TTS
             setStatusMessage("Loading TTS model...")
             await tts.loadModels()
+            setDebugInfo(prev => ({ ...prev, ttsLoaded: true }))
             
-            // Load the in-browser LLM
-            setStatusMessage("Loading LLM model (this may take a minute)...")
-            await webllm.loadModel()
+            // Load LLM based on mode
+            if (llmMode === "webllm") {
+              setStatusMessage("Loading LLM model (this may take a minute)...")
+              await webllm.loadModel()
+              setDebugInfo(prev => ({ ...prev, llmLoaded: true }))
+            } else {
+              // HuggingFace API - no loading needed
+              setDebugInfo(prev => ({ ...prev, llmLoaded: true, llmMode: "huggingface" }))
+            }
             
             setStatus("ready")
             setStatusMessage("Ready! Click 'Start Call' to begin.")
@@ -195,16 +273,27 @@ export default function VoiceChat() {
     try {
       const currentWebllm = webllmRef.current
       
-      if (!currentWebllm.isReady) {
-        throw new Error("LLM not ready")
-      }
+      let assistantMessage: string
       
-      // Use in-browser WebLLM
-      console.debug("[Voice] Using WebLLM (in-browser)")
-      const assistantMessage = await currentWebllm.chat(
-        conversationHistory.map(m => ({ role: m.role, content: m.content })),
-        SYSTEM_PROMPT
-      )
+      if (llmMode === "huggingface") {
+        // Use HuggingFace Inference API
+        console.debug("[Voice] Using HuggingFace API")
+        assistantMessage = await callHuggingFaceAPI(
+          conversationHistory.map(m => ({ role: m.role, content: m.content })),
+          SYSTEM_PROMPT,
+          abortControllerRef.current?.signal
+        )
+      } else {
+        // Use in-browser WebLLM
+        if (!currentWebllm.isReady) {
+          throw new Error("LLM not ready")
+        }
+        console.debug("[Voice] Using WebLLM (in-browser)")
+        assistantMessage = await currentWebllm.chat(
+          conversationHistory.map(m => ({ role: m.role, content: m.content })),
+          SYSTEM_PROMPT
+        )
+      }
 
       setMessages(prev => [...prev, { role: "assistant", content: assistantMessage }])
       console.log("[LLM]", assistantMessage)
@@ -340,8 +429,23 @@ export default function VoiceChat() {
     setStatusMessage("Ready! Click mic to start a new call.")
   }
 
-  // Auto-initialize on mount (empty deps - run once)
+  // Check WebGPU support and auto-initialize on mount
   useEffect(() => {
+    // Check WebGPU
+    const checkWebGPU = async () => {
+      if (typeof navigator !== "undefined" && "gpu" in navigator) {
+        try {
+          const adapter = await (navigator as unknown as { gpu: { requestAdapter(): Promise<unknown> } }).gpu.requestAdapter()
+          setDebugInfo(prev => ({ ...prev, webgpu: adapter ? "available" : "no adapter" }))
+        } catch {
+          setDebugInfo(prev => ({ ...prev, webgpu: "error" }))
+        }
+      } else {
+        setDebugInfo(prev => ({ ...prev, webgpu: "not supported" }))
+      }
+    }
+    checkWebGPU()
+    
     console.debug("[Voice] Auto-initializing...")
     loadModels()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -429,6 +533,52 @@ export default function VoiceChat() {
         </ConversationContent>
         <ConversationScrollButton />
       </Conversation>
+
+      {/* Debug Panel */}
+      {showDebugPanel && (
+        <div className="fixed top-4 right-4 bg-zinc-900 border border-zinc-700 rounded-lg p-4 text-xs font-mono z-50 min-w-[200px]">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-zinc-400 font-semibold">Debug Info</span>
+            <button onClick={() => setShowDebugPanel(false)} className="text-zinc-500 hover:text-white">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="space-y-1 text-zinc-300">
+            <div>WebGPU: <span className={debugInfo.webgpu === "available" ? "text-green-400" : "text-yellow-400"}>{debugInfo.webgpu}</span></div>
+            <div>iOS: <span className={isIOS ? "text-yellow-400" : "text-green-400"}>{isIOS ? "yes" : "no"}</span></div>
+            <div>LLM Mode: <span className="text-blue-400">{llmMode}</span></div>
+            <hr className="border-zinc-700 my-2" />
+            <div>VAD: {debugInfo.vadLoaded ? <span className="text-green-400">✓</span> : <span className="text-zinc-500">○</span>}</div>
+            <div>STT: {debugInfo.sttLoaded ? <span className="text-green-400">✓</span> : <span className="text-zinc-500">○</span>}</div>
+            <div>TTS: {debugInfo.ttsLoaded ? <span className="text-green-400">✓</span> : <span className="text-zinc-500">○</span>}</div>
+            <div>LLM: {debugInfo.llmLoaded ? <span className="text-green-400">✓</span> : <span className="text-zinc-500">○</span>}</div>
+            <hr className="border-zinc-700 my-2" />
+            <div className="flex gap-2">
+              <button
+                onClick={() => setLLMMode("webllm")}
+                className={`px-2 py-1 rounded ${llmMode === "webllm" ? "bg-blue-600" : "bg-zinc-700"}`}
+              >
+                WebLLM
+              </button>
+              <button
+                onClick={() => setLLMMode("huggingface")}
+                className={`px-2 py-1 rounded ${llmMode === "huggingface" ? "bg-blue-600" : "bg-zinc-700"}`}
+              >
+                HF API
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Debug toggle button */}
+      <button
+        onClick={() => setShowDebugPanel(!showDebugPanel)}
+        className="fixed top-4 right-4 p-2 bg-zinc-800 rounded-full text-zinc-400 hover:text-white z-40"
+        title="Toggle debug panel"
+      >
+        <Settings className="h-4 w-4" />
+      </button>
 
       {/* Fixed bottom bar */}
       <div className="fixed bottom-0 left-0 right-0 p-4">
