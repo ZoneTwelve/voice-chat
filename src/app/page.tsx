@@ -40,6 +40,7 @@ const DEFAULT_MODEL = "MiniMax-M2";
 interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
+  thinking?: string | null;
 }
 
 export default function VoiceChat() {
@@ -193,6 +194,32 @@ export default function VoiceChat() {
     workerRef.current?.postMessage({ type: "init" });
   }, [initWorker]);
 
+  // Extract thinking content and clean response for MiniMax model
+  const processResponse = (rawResponse: string) => {
+    const startMarker = "<think>";
+    const endMarker = "</think>";
+
+    const startIndex = rawResponse.indexOf(startMarker);
+    const endIndex = rawResponse.indexOf(endMarker);
+
+    let thinking = null;
+    let cleanResponse = rawResponse;
+
+    if (startIndex !== -1 && endIndex !== -1 && startIndex < endIndex) {
+      // Extract thinking content
+      thinking = rawResponse
+        .substring(startIndex + startMarker.length, endIndex)
+        .trim();
+
+      // Build clean response by removing the entire thinking section
+      const beforeThinking = rawResponse.substring(0, startIndex);
+      const afterThinking = rawResponse.substring(endIndex + endMarker.length);
+      cleanResponse = (beforeThinking + afterThinking).trim();
+    }
+
+    return { thinking, cleanResponse };
+  };
+
   // Handle external LLM response with streaming support
   const handleLLMResponse = async (conversationHistory: ChatMessage[]) => {
     // Prevent parallel LLM/TTS calls
@@ -296,15 +323,33 @@ export default function VoiceChat() {
         }
       }
 
-      // Start TTS with the complete response
-      const finalResponse = currentResponseRef.current;
-      if (finalResponse.trim()) {
-        console.log("[LLM]", finalResponse);
+      // Process final response to extract thinking content
+      const rawResponse = currentResponseRef.current;
+      const { thinking, cleanResponse } = processResponse(rawResponse);
+
+      // Update message with thinking content if present
+      if (thinking) {
+        setMessages((prev) => {
+          const newMessages = [...prev];
+          const lastMessage = newMessages[newMessages.length - 1];
+          if (lastMessage && lastMessage.role === "assistant") {
+            lastMessage.thinking = thinking;
+          }
+          return newMessages;
+        });
+      }
+
+      // Start TTS with the clean response (without thinking)
+      if (cleanResponse.trim()) {
+        console.log("[LLM] Clean:", cleanResponse);
+        if (thinking) {
+          console.log("[LLM] Thinking:", thinking);
+        }
 
         // Speak the response (can be interrupted)
         setStatus("speaking");
         setStatusMessage("Speaking...");
-        await tts.speak(finalResponse);
+        await tts.speak(cleanResponse);
 
         if (isCallActiveRef.current) {
           setStatus("listening");
@@ -536,6 +581,21 @@ export default function VoiceChat() {
                   from={msg.role === "user" ? "user" : "assistant"}
                 >
                   <MessageContent variant="contained">
+                    {/* Show thinking content in expandable section */}
+                    {msg.thinking && (
+                      <details className="mb-2 group">
+                        <summary className="text-xs text-zinc-500 hover:text-zinc-400 cursor-pointer list-none">
+                          <span className="inline-flex items-center gap-1">
+                            🤔 Thinking process
+                            <ChevronDown className="h-3 w-3 group-open:rotate-180 transition-transform" />
+                          </span>
+                        </summary>
+                        <div className="mt-2 p-2 bg-zinc-800/50 rounded text-xs text-zinc-400 font-mono">
+                          {msg.thinking}
+                        </div>
+                      </details>
+                    )}
+                    {/* Show the actual response */}
                     {msg.content}
                   </MessageContent>
                 </Message>
