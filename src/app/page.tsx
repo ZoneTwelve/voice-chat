@@ -578,7 +578,7 @@ export default function VoiceChat() {
                 </h1>
                 <p className="text-zinc-400 text-sm mb-4">
                   External API — powered by{" "}
-                  {process.env.NEXT_PUBLIC_OPENAI_MODEL || "Unkown"}
+                  {process.env.NEXT_PUBLIC_OPENAI_MODEL || "MiniMax-M2"}
                 </p>
                 <p className="text-zinc-500">
                   {status === "idle"
