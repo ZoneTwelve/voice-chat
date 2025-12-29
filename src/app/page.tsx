@@ -211,10 +211,23 @@ export default function VoiceChat() {
         .substring(startIndex + startMarker.length, endIndex)
         .trim();
 
-      // Build clean response by removing the entire thinking section
-      const beforeThinking = rawResponse.substring(0, startIndex);
-      const afterThinking = rawResponse.substring(endIndex + endMarker.length);
-      cleanResponse = (beforeThinking + afterThinking).trim();
+      // Build clean response by removing the ENTIRE thinking section including markers
+      const beforeThinking = rawResponse.substring(0, startIndex).trim();
+      const afterThinking = rawResponse
+        .substring(endIndex + endMarker.length)
+        .trim();
+
+      // Combine clean parts and normalize whitespace
+      cleanResponse = [beforeThinking, afterThinking]
+        .filter((part) => part.length > 0)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    // If no thinking content found, return the original response as clean
+    if (!thinking) {
+      cleanResponse = rawResponse.trim();
     }
 
     return { thinking, cleanResponse };
@@ -303,12 +316,20 @@ export default function VoiceChat() {
                 currentResponseRef.current += content;
                 console.log("[Streaming] Chunk:", content);
 
-                // Update the latest assistant message with streaming content
+                // Extract thinking content and clean response
+                const { thinking, cleanResponse } = processResponse(
+                  currentResponseRef.current,
+                );
+
+                // Update the latest assistant message with CLEAN response only
                 setMessages((prev) => {
                   const newMessages = [...prev];
                   const lastMessage = newMessages[newMessages.length - 1];
                   if (lastMessage && lastMessage.role === "assistant") {
-                    lastMessage.content = currentResponseRef.current;
+                    // Show ONLY the clean response in main content (no thinking markers)
+                    lastMessage.content = cleanResponse;
+                    // Store thinking separately for expandable section
+                    lastMessage.thinking = thinking;
                   }
                   return newMessages;
                 });
@@ -327,25 +348,25 @@ export default function VoiceChat() {
       const rawResponse = currentResponseRef.current;
       const { thinking, cleanResponse } = processResponse(rawResponse);
 
-      // Update message with thinking content if present
-      if (thinking) {
-        setMessages((prev) => {
-          const newMessages = [...prev];
-          const lastMessage = newMessages[newMessages.length - 1];
-          if (lastMessage && lastMessage.role === "assistant") {
-            lastMessage.thinking = thinking;
-          }
-          return newMessages;
-        });
-      }
+      console.log("[LLM] Raw:", rawResponse);
+      console.log("[LLM] Clean:", cleanResponse);
+      console.log("[LLM] Thinking:", thinking);
+
+      // Update the assistant message with clean response and thinking content
+      setMessages((prev) => {
+        const newMessages = [...prev];
+        const lastMessage = newMessages[newMessages.length - 1];
+        if (lastMessage && lastMessage.role === "assistant") {
+          // Update with clean response (no thinking markers in main content)
+          lastMessage.content = cleanResponse;
+          // Store thinking separately for expandable section
+          lastMessage.thinking = thinking;
+        }
+        return newMessages;
+      });
 
       // Start TTS with the clean response (without thinking)
       if (cleanResponse.trim()) {
-        console.log("[LLM] Clean:", cleanResponse);
-        if (thinking) {
-          console.log("[LLM] Thinking:", thinking);
-        }
-
         // Speak the response (can be interrupted)
         setStatus("speaking");
         setStatusMessage("Speaking...");
