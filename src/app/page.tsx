@@ -326,10 +326,14 @@ export default function VoiceChat() {
                   const newMessages = [...prev];
                   const lastMessage = newMessages[newMessages.length - 1];
                   if (lastMessage && lastMessage.role === "assistant") {
-                    // Show ONLY the clean response in main content (no thinking markers)
-                    lastMessage.content = cleanResponse;
-                    // Store thinking separately for expandable section
-                    lastMessage.thinking = thinking;
+                    // Create new message object to trigger proper re-render and scrolling
+                    newMessages[newMessages.length - 1] = {
+                      ...lastMessage,
+                      // Show ONLY the clean response in main content (no thinking markers)
+                      content: cleanResponse,
+                      // Store thinking separately for expandable section
+                      thinking: thinking,
+                    };
                   }
                   return newMessages;
                 });
@@ -357,10 +361,14 @@ export default function VoiceChat() {
         const newMessages = [...prev];
         const lastMessage = newMessages[newMessages.length - 1];
         if (lastMessage && lastMessage.role === "assistant") {
-          // Update with clean response (no thinking markers in main content)
-          lastMessage.content = cleanResponse;
-          // Store thinking separately for expandable section
-          lastMessage.thinking = thinking;
+          // Create new message object to trigger proper re-render and scrolling
+          newMessages[newMessages.length - 1] = {
+            ...lastMessage,
+            // Update with clean response (no thinking markers in main content)
+            content: cleanResponse,
+            // Store thinking separately for expandable section
+            thinking: thinking,
+          };
         }
         return newMessages;
       });
@@ -555,7 +563,10 @@ export default function VoiceChat() {
   ];
 
   return (
-    <div className="h-screen bg-zinc-950 flex flex-col">
+    <div
+      suppressHydrationWarning
+      className="h-screen bg-zinc-950 flex flex-col"
+    >
       {/* Main content */}
       <div className="flex-1 overflow-hidden">
         <Conversation className="max-w-2xl mx-auto">
@@ -608,7 +619,10 @@ export default function VoiceChat() {
                         <summary className="text-xs text-zinc-500 hover:text-zinc-400 cursor-pointer list-none">
                           <span className="inline-flex items-center gap-1">
                             🤔 Thinking process
-                            <ChevronDown className="h-3 w-3 group-open:rotate-180 transition-transform" />
+                            <ChevronDown
+                              suppressHydrationWarning
+                              className="h-3 w-3 group-open:rotate-180 transition-transform"
+                            />
                           </span>
                         </summary>
                         <div className="mt-2 p-2 bg-zinc-800/50 rounded text-xs text-zinc-400 font-mono">
@@ -636,7 +650,7 @@ export default function VoiceChat() {
               onClick={() => setShowDebugPanel(!showDebugPanel)}
               className="text-xs text-zinc-500 hover:text-zinc-400"
             >
-              <Settings className="h-4 w-4" />
+              <Settings suppressHydrationWarning className="h-4 w-4" />
             </button>
           </div>
 
@@ -649,7 +663,7 @@ export default function VoiceChat() {
                   onClick={() => setShowDebugPanel(false)}
                   className="text-zinc-500 hover:text-white"
                 >
-                  <X className="h-4 w-4" />
+                  <X suppressHydrationWarning className="h-4 w-4" />
                 </button>
               </div>
               <div className="space-y-1 text-zinc-300">
@@ -766,7 +780,14 @@ export default function VoiceChat() {
             {/* Waveform - takes remaining space */}
             <div className="flex-1 mx-2">
               <LiveWaveform
-                analyser={null}
+                active={waveformActive}
+                processing={waveformProcessing}
+                barWidth={2}
+                barGap={2}
+                barRadius={1}
+                fadeEdges={true}
+                fadeWidth={24}
+                sensitivity={2}
                 smoothingTimeConstant={0.8}
                 height={32}
                 mode="static"
@@ -796,9 +817,9 @@ export default function VoiceChat() {
                   title={isMicMuted ? "Unmute mic" : "Mute mic"}
                 >
                   {isMicMuted ? (
-                    <MicOff className="h-5 w-5" />
+                    <MicOff suppressHydrationWarning className="h-5 w-5" />
                   ) : (
-                    <Mic className="h-5 w-5" />
+                    <Mic suppressHydrationWarning className="h-5 w-5" />
                   )}
                 </Button>
               )}
@@ -816,9 +837,9 @@ export default function VoiceChat() {
                 title={tts.muted ? "Unmute speaker" : "Mute speaker"}
               >
                 {tts.muted ? (
-                  <VolumeX className="h-5 w-5" />
+                  <VolumeX suppressHydrationWarning className="h-5 w-5" />
                 ) : (
-                  <Volume2 className="h-5 w-5" />
+                  <Volume2 suppressHydrationWarning className="h-5 w-5" />
                 )}
               </Button>
 
@@ -831,7 +852,7 @@ export default function VoiceChat() {
                   className="h-10 w-10 rounded-full text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700"
                   title="Voice selection"
                 >
-                  <ChevronDown className="h-4 w-4" />
+                  <ChevronDown suppressHydrationWarning className="h-4 w-4" />
                 </Button>
 
                 {showVoiceMenu && (
@@ -880,9 +901,9 @@ export default function VoiceChat() {
                   title={isCallActive ? "End call" : "Start call"}
                 >
                   {isCallActive ? (
-                    <PhoneOff className="h-5 w-5" />
+                    <PhoneOff suppressHydrationWarning className="h-5 w-5" />
                   ) : (
-                    <Phone className="h-5 w-5" />
+                    <Phone suppressHydrationWarning className="h-5 w-5" />
                   )}
                 </Button>
               )}
