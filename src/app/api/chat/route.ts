@@ -100,13 +100,31 @@ export async function POST(request: NextRequest) {
               const { done, value } = await reader.read();
               if (done) break;
 
-              controller.enqueue(value);
+              // Check if controller is still open before enqueueing
+              try {
+                controller.enqueue(value);
+              } catch (err) {
+                console.warn("[API] Controller closed, stopping stream");
+                break;
+              }
             }
 
-            controller.close();
+            // Only close if controller is still open
+            try {
+              controller.close();
+            } catch (err) {
+              console.warn("[API] Controller already closed");
+            }
           } catch (error) {
             console.error("[API] Streaming error:", error);
-            controller.error(error);
+            // Only error if controller is still open
+            try {
+              controller.error(error);
+            } catch (err) {
+              console.warn(
+                "[API] Controller already closed, cannot send error",
+              );
+            }
           }
         },
       });
