@@ -75,6 +75,7 @@ export default function VoiceChat() {
   const abortControllerRef = useRef<AbortController | null>(null); // For cancelling LLM requests
   const pendingUserInputRef = useRef<string | null>(null); // Queue user input during processing
   const currentResponseRef = useRef<string>(""); // Current streaming response
+  const currentReasoningRef = useRef<string>(""); // Current reasoning content
 
   // WebGPU TTS
   const tts = useTTS({
@@ -312,14 +313,37 @@ export default function VoiceChat() {
 
               // Extract content from OpenAI streaming format: choices[0].delta.content
               const content = parsed.choices?.[0]?.delta?.content;
-              if (content) {
-                currentResponseRef.current += content;
-                console.log("[Streaming] Chunk:", content);
+              const reasoningContent = parsed.choices?.[0]?.delta?.reasoning_content;
 
-                // Extract thinking content and clean response
-                const { thinking, cleanResponse } = processResponse(
-                  currentResponseRef.current,
-                );
+              if (content || reasoningContent) {
+                // Update current response with content
+                if (content) {
+                  currentResponseRef.current += content;
+                }
+                if (reasoningContent) {
+                  currentReasoningRef.current += reasoningContent;
+                }
+
+                // Handle reasoning content separately from regular content
+                let thinking = null;
+                let cleanResponse = "";
+
+                if (reasoningContent || currentReasoningRef.current) {
+                  // For thinking models, reasoning_content contains the thinking process
+                  // and content will contain the final response
+                  thinking = currentReasoningRef.current;
+                  cleanResponse = currentResponseRef.current;
+                } else if (content) {
+                  // Fallback to content-based thinking extraction (existing logic)
+                  const { thinking: extractedThinking, cleanResponse: extractedClean } = processResponse(
+                    currentResponseRef.current,
+                  );
+                  thinking = extractedThinking;
+                  cleanResponse = extractedClean;
+                }
+
+                console.log("[Streaming] Chunk:", content || reasoningContent);
+                console.log("[Streaming] Thinking:", thinking);
 
                 // Update the latest assistant message with CLEAN response only
                 setMessages((prev) => {
@@ -329,7 +353,7 @@ export default function VoiceChat() {
                     // Create new message object to trigger proper re-render and scrolling
                     newMessages[newMessages.length - 1] = {
                       ...lastMessage,
-                      // Show ONLY the clean response in main content (no thinking markers)
+                      // Show the clean response in main content
                       content: cleanResponse,
                       // Store thinking separately for expandable section
                       thinking: thinking,
@@ -350,11 +374,17 @@ export default function VoiceChat() {
 
       // Process final response to extract thinking content
       const rawResponse = currentResponseRef.current;
-      const { thinking, cleanResponse } = processResponse(rawResponse);
+      const hasReasoningContent = currentReasoningRef.current.trim().length > 0;
+      const { thinking, cleanResponse } = hasReasoningContent
+        ? {
+            thinking: currentReasoningRef.current,
+            cleanResponse: currentResponseRef.current
+          }
+        : processResponse(rawResponse);
 
       console.log("[LLM] Raw:", rawResponse);
       console.log("[LLM] Clean:", cleanResponse);
-      console.log("[LLM] Thinking:", thinking);
+      console.log("[LLM] Thinking:", hasReasoningContent ? "[from reasoning_content]" : thinking);
 
       // Update the assistant message with clean response and thinking content
       setMessages((prev) => {
@@ -372,6 +402,9 @@ export default function VoiceChat() {
         }
         return newMessages;
       });
+
+      // Reset reasoning content for next request
+      currentReasoningRef.current = "";
 
       // Start TTS with the clean response (without thinking)
       if (cleanResponse.trim()) {
@@ -401,6 +434,7 @@ export default function VoiceChat() {
       isProcessingRef.current = false;
       abortControllerRef.current = null;
       currentResponseRef.current = "";
+      currentReasoningRef.current = ""; // Reset reasoning content
 
       // Process any pending user input that came in during processing
       if (pendingUserInputRef.current) {
@@ -576,7 +610,7 @@ export default function VoiceChat() {
                 <h1 className="text-2xl font-semibold text-white mb-2">
                   AI Voice Chat
                 </h1>
-                <p className="text-zinc-400 text-sm mb-4">
+                <p className="text-zinc-100 text-sm mb-4">
                   External API — powered by{" "}
                   {process.env.NEXT_PUBLIC_OPENAI_MODEL || "MiniMax-M2"}
                 </p>
@@ -617,7 +651,7 @@ export default function VoiceChat() {
                     {/* Show thinking content in expandable section */}
                     {msg.thinking && (
                       <details className="mb-2 group">
-                        <summary className="text-xs text-zinc-500 hover:text-zinc-400 cursor-pointer list-none">
+                        <summary className="text-xs text-zinc-500 hover:text-zinc-100 cursor-pointer list-none">
                           <span className="inline-flex items-center gap-1">
                             🤔 Thinking process
                             <ChevronDown
@@ -626,7 +660,7 @@ export default function VoiceChat() {
                             />
                           </span>
                         </summary>
-                        <div className="mt-2 p-2 bg-zinc-800/50 rounded text-xs text-zinc-400 font-mono">
+                        <div className="mt-2 p-2 bg-zinc-800/50 rounded text-xs text-zinc-100 font-mono">
                           {msg.thinking}
                         </div>
                       </details>
@@ -649,7 +683,7 @@ export default function VoiceChat() {
           <div className="mb-2 flex justify-end">
             <button
               onClick={() => setShowDebugPanel(!showDebugPanel)}
-              className="text-xs text-zinc-500 hover:text-zinc-400"
+              className="text-xs text-zinc-500 hover:text-zinc-100"
             >
               <Settings suppressHydrationWarning className="h-4 w-4" />
             </button>
@@ -659,7 +693,7 @@ export default function VoiceChat() {
           {showDebugPanel && (
             <div className="fixed top-4 right-4 bg-zinc-900 border border-zinc-700 rounded-lg p-4 text-xs font-mono z-50 min-w-[200px]">
               <div className="flex justify-between items-center mb-2">
-                <span className="text-zinc-400 font-semibold">Debug Info</span>
+                <span className="text-zinc-100 font-semibold">Debug Info</span>
                 <button
                   onClick={() => setShowDebugPanel(false)}
                   className="text-zinc-500 hover:text-white"
@@ -813,7 +847,7 @@ export default function VoiceChat() {
                   className={`h-10 w-10 rounded-full ${
                     isMicMuted
                       ? "text-red-400 hover:text-red-300"
-                      : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700"
+                      : "text-zinc-100 hover:text-zinc-200 hover:bg-zinc-700"
                   }`}
                   title={isMicMuted ? "Unmute mic" : "Mute mic"}
                 >
@@ -833,7 +867,7 @@ export default function VoiceChat() {
                 className={`h-10 w-10 rounded-full ${
                   tts.muted
                     ? "text-red-400 hover:text-red-300"
-                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700"
+                    : "text-zinc-100 hover:text-zinc-200 hover:bg-zinc-700"
                 }`}
                 title={tts.muted ? "Unmute speaker" : "Mute speaker"}
               >
@@ -850,7 +884,7 @@ export default function VoiceChat() {
                   variant="ghost"
                   size="sm"
                   onClick={() => setShowVoiceMenu(!showVoiceMenu)}
-                  className="h-10 w-10 rounded-full text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700"
+                  className="h-10 w-10 rounded-full text-zinc-100 hover:text-zinc-200 hover:bg-zinc-700"
                   title="Voice selection"
                 >
                   <ChevronDown suppressHydrationWarning className="h-4 w-4" />
