@@ -341,7 +341,7 @@ export default function VoiceChat() {
             } catch (e) {
               console.debug(
                 "[Voice] Failed to parse streaming data:",
-                e.message,
+                e instanceof Error ? e.message : String(e),
               );
             }
           }
@@ -568,7 +568,7 @@ export default function VoiceChat() {
       className="h-screen bg-zinc-950 flex flex-col"
     >
       {/* Main content */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-y-auto">
         <Conversation className="max-w-2xl mx-auto">
           <ConversationContent>
             {messages.length === 0 ? (
