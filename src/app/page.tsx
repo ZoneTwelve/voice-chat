@@ -599,7 +599,7 @@ export default function VoiceChat() {
   return (
     <div
       suppressHydrationWarning
-      className="h-screen bg-zinc-950 flex flex-col"
+      className="h-screen bg-slate-950 flex flex-col"
     >
       {/* Main content */}
       <div className="flex-1 overflow-y-auto">
@@ -651,7 +651,7 @@ export default function VoiceChat() {
                     {/* Show thinking content in expandable section */}
                     {msg.thinking && (
                       <details className="mb-2 group">
-                        <summary className="text-xs text-zinc-500 hover:text-zinc-100 cursor-pointer list-none">
+                        <summary className="text-xs text-slate-400 hover:text-slate-200 cursor-pointer list-none">
                           <span className="inline-flex items-center gap-1">
                             🤔 Thinking process
                             <ChevronDown
@@ -660,7 +660,7 @@ export default function VoiceChat() {
                             />
                           </span>
                         </summary>
-                        <div className="mt-2 p-2 bg-zinc-800/50 rounded text-xs text-zinc-100 font-mono">
+                        <div className="mt-2 p-2 bg-slate-950/80 rounded text-xs text-slate-100 font-mono">
                           {msg.thinking}
                         </div>
                       </details>
@@ -677,7 +677,7 @@ export default function VoiceChat() {
       </div>
 
       {/* Bottom controls */}
-      <div className="border-t border-zinc-800 bg-zinc-900">
+      <div className="border-t border-slate-800 bg-slate-950">
         <div className="max-w-2xl mx-auto px-4 py-3">
           {/* Debug panel toggle */}
           <div className="mb-2 flex justify-end">
